@@ -1,8 +1,9 @@
-//Napisz program na rozwi¹zanie uk³adu dwóch równañ liniowych.
-//min req.
-//Rozmiar buforu ekranu 120 / 40 (ustalic)
-//Rozmiar okna jw.
-//min rozmiar figury
+/*
+* PJATK Gdansk
+* PRG1 2016/2017
+* Temat: Projekt semestralny - Program rysujacy zadana figure wybranym kodem ASCII
+* Student: 16125
+/*
 
 /* Bibliografia ;) 
 * https://msdn.microsoft.com/pl-pl/library/windows/desktop/ms682093(v=vs.85).aspx - CONSOLE_SCREEN_BUFFER_INFO
@@ -11,13 +12,14 @@
 * http://stackoverflow.com/questions/13212043/integer-input-validation-how - walidacja
 * http://stackoverflow.com/questions/1904635/warning-c4003-and-errors-c2589-and-c2059-on-x-stdnumeric-limitsintmax
 	- problem z konfliktem (numeric_limits<streamsize>::max)() VS max(), pomogl zwykly nawias
+* http://www.cplusplus.com/reference/ios/ios_base/width/ - ustawienie cout od lewej
+* https://social.msdn.microsoft.com/Forums/vstudio/en-US/a1759ad8-56d9-487d-84c9-3020300c87a3/cc-how-get-arrow-keyscorrectly-using-getch?forum=vcgeneral
+	- problem z przekazaniem znakow specjalnych (strzalki) przez getch()
+* http://www.cplusplus.com/forum/beginner/4234/#msg18563 - SetConsoleCursorPosition
 */
 
 #include <iostream>
 #include <string>
-//#define _USE_MATH_DEFINES //na potrzeby pi
-//#include <math.h>
-//#define NOMINMAX //
 #include <windows.h>
 #include <conio.h> // bibl Windowsowa
 #include <limits> // dla cin.ignore(numeric_limits<streamsize>::max(), '\n');
@@ -27,14 +29,94 @@ using namespace std;
 /*************************************************************************/
 /* DEKLARACJE STA£YCH GLOBALNYCH */
 
-const bool DEBUG_MODE = 1;
-const short MIN_SZEROKOSC_KONSOLI = 120;
-const short MIN_WYSOKOSC_KONSOLI = 40;
-const short MIN_ROZMIAR_FIGURY = 5;
-const char DOMYSLNY_ZNAK = 'X';
+const bool DEBUG_MODE = 0; // Gdy 1, wyswietla info o konsoli
+const short MIN_SZEROKOSC_KONSOLI = 80;
+const short MIN_WYSOKOSC_KONSOLI = 10;
+const short MIN_ROZMIAR_FIGURY = 3;
+const short PUNKT_POCZATKOWY_X = 0;
+const short PUNKT_POCZATKOWY_Y = 0;
+const unsigned char ENTER = 13;
+const unsigned char ESC = 27;
 
 /*************************************************************************/
 /* DEKLARACJE FUNKCJI */
+
+void ToggleCursor(bool);
+void wypiszNaglowek();
+short wczytajKodZnaku();
+short wczytajWysokoscKonsoli();
+short wczytajSzerokoscKonsoli();
+short getMaxRozmiarFigury();
+void gotoxy(short, short);
+short wczytajRozmiarPoczatkowy();
+void wypiszASCII();
+void rysujFigure(short, char, short, short);
+unsigned char manipulujFigura(short &, short &, short &);
+void debugMode();
+
+
+/*************************************************************************/
+/* START */
+
+int main()
+{
+	char znak;
+	short rozmiar;
+	short pozycjaX;
+	short pozycjaY;
+	unsigned char koniec = ESC;
+
+	do {
+		ToggleCursor(1);
+
+		// Jesli powrot z rysowania, to pozwol na ucieczke i zakonczenie programu.
+		if (koniec == ENTER) {
+			system("cls");
+			cout << "Nacisnij ESC, aby wyjsc lub dowolny inny klawisz, aby kontynuowac zabawe...";
+			if (_getch() == ESC) break;
+			system("cls");
+		}
+
+		// Na potrzeby sprawdzania info o konsoli.
+		if (DEBUG_MODE) {
+			debugMode();
+		}
+
+		wypiszNaglowek();
+
+		if ((wczytajWysokoscKonsoli() < MIN_WYSOKOSC_KONSOLI) || (wczytajSzerokoscKonsoli() < MIN_SZEROKOSC_KONSOLI)) {
+			cout << "Za maly rozmiar konsoli ";
+			cout << "(min.wys. = " << MIN_WYSOKOSC_KONSOLI << ", min. szer. = " << MIN_SZEROKOSC_KONSOLI << ").\n";
+			cout << "Zmien wymiary swojej konsoli i uruchom program ponownie.\n";
+			system("PAUSE");
+			return EXIT_SUCCESS;
+		}
+
+		pozycjaX = PUNKT_POCZATKOWY_X;
+		pozycjaY = PUNKT_POCZATKOWY_Y;
+
+		wypiszASCII();
+
+		znak = (char)wczytajKodZnaku();
+		rozmiar = wczytajRozmiarPoczatkowy();
+
+		ToggleCursor(0);
+
+		do {
+			rysujFigure(rozmiar, znak, pozycjaX, pozycjaY);
+			koniec = manipulujFigura(pozycjaX, pozycjaY, rozmiar);
+		} while ( koniec != ESC && koniec != ENTER);
+		//wypiszASCII();
+		//wybierzZnak();
+		//echoConsoleInfoOnly();
+	} while (koniec != ESC);
+	return EXIT_SUCCESS;
+}
+
+/* KONIEC */
+
+/*************************************************************************/
+/* DEFINICJE FUNKCJI */
 
 void wypiszNaglowek() {
 	cout << "\
@@ -44,133 +126,6 @@ Temat: Projekt semestralny - Program rysujacy zadana figure wybranym kodem ASCII
 Student: 16125 \n\n";
 }
 
-int wczytajLiczbeCalkowita(string, bool);
-
-short wczytajKodZnaku();
-
-short wczytajWysokoscKonsoli();
-short wczytajSzerokoscKonsoli();
-
-void gotoxy(short x, short y) {
-	COORD c; //SHORT x, SHORT y
-	c.X = x;
-	c.Y = y;
-	SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), c);
-}
-int wherex() {
-	CONSOLE_SCREEN_BUFFER_INFO csbi;
-	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
-	return csbi.dwCursorPosition.X;
-	/*
-	dwSize
-     A COORD structure that contains the size of the console screen buffer, in character columns and rows.
-	dwCursorPosition
-	 A COORD structure that contains the column and row coordinates of the cursor in the console screen buffer.
-	srWindow
-	 A SMALL_RECT structure that contains the console screen buffer coordinates of the upper-left and lower-right corners of the display window.
-	dwMaximumWindowSize
-	 A COORD structure that contains the maximum size of the console window, in character columns and rows, given the current screen buffer size and font and the screen size.
-	*/
-}
-int wherey() {
-	CONSOLE_SCREEN_BUFFER_INFO csbi;
-	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
-	return csbi.dwCursorPosition.Y;
-}
-
-short wczytajRozmiarPoczatkowy();
-
-void wypiszASCII() {
-	//short x = 0, short y = 0, short wierszy = 10, short kolumn = 60
-	
-	char ch;
-	int i;
-	for (i = 33; i < 255; i++)
-	{
-		ch = i;
-		cout << i << "-> " << ch << "\t";
-	}
-}
-
-void rysujFigure(short rozmiar, char znak, short x, short y)
-{
-	system("cls");
-	short belkaFigury;
-	short rozmiarObl = rozmiar / 2;
-	bool czyParzystyRozmiar;
-
-	if (rozmiar % 2 == 0) {
-		czyParzystyRozmiar = 1;
-	}
-	else {
-		czyParzystyRozmiar = 0;
-	}
-
-	rozmiarObl = rozmiarObl * 2;
-
-
-	if (rozmiar % 2 == 0) {
-		belkaFigury = rozmiar / 2;
-	}
-	else {
-		belkaFigury = (rozmiar + 1) / 2;
-	}
-
-	for (int i = 0; i < rozmiarObl; i++)
-	{
-		gotoxy(x + i, y + i);
-		cout << znak;
-		gotoxy(x + (2 * rozmiarObl - i - czyParzystyRozmiar), y + i);
-		cout << znak;
-		gotoxy(x + belkaFigury + i + 1, y + belkaFigury);
-		cout << znak;
-		if (!czyParzystyRozmiar) {
-			gotoxy(x + rozmiarObl, y + rozmiarObl);
-			cout << znak;
-		}
-	}
-	/*for (int i = 0; i < rozmiar / 2; i++)
-	{
-		gotoxy(x - ((rozmiar / 2) - i), y - ((rozmiar / 2) - i));
-		cout << znak;
-		gotoxy(x - ((rozmiar / 2) - i), y + ((rozmiar / 2) - i));
-		cout << znak;
-	}*/
-}
-
-void rysujFigure2(short coordX, short coordY, char znak, short rozmiar) {
-	cout << znak;
-}
-
-bool figuraMain(char, short);
-
-
-/*************************************************************************/
-/* FUNKCJE POMOCNICZE */
-
-char input2ascii() {
-		char input;
-		cin >> input;
-		cout << (short)input;
-		return input;
-	}
-void echoConsoleInfoOnly() { /*Funkcja na potrzeby badawcze ;)*/
-	char znak;
-	do {
-		system("cls");
-		CONSOLE_SCREEN_BUFFER_INFO csbi;
-		GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
-		cout << "dwSize: " << csbi.dwSize.X << " , " << csbi.dwSize.Y << endl;
-		cout << "dwCursorPosition: " << csbi.dwCursorPosition.X << " , " << csbi.dwCursorPosition.Y << endl;
-		cout << "srWindowTL: " << csbi.srWindow.Left << " , " << csbi.srWindow.Top << endl;
-		cout << "srWindowBR: " << csbi.srWindow.Right << " , " << csbi.srWindow.Bottom << endl;
-		cout << "dwMaximumWindowSize: " << csbi.dwMaximumWindowSize.X << " , " << csbi.dwMaximumWindowSize.Y << endl;
-		gotoxy(csbi.srWindow.Right, csbi.srWindow.Bottom);
-		cout << "#";
-
-		znak = _getch();
-	} while (znak != 27);
-}
 void debugMode() {
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
@@ -183,69 +138,34 @@ void debugMode() {
 	cout << endl;
 }
 
-
-/*************************************************************************/
-/* START */
-
-int main()
+void ToggleCursor(bool trigger)
 {
-	char znak = DOMYSLNY_ZNAK;
-	short rozmiar = MIN_ROZMIAR_FIGURY;
-	short maxRozmiarFigury = MIN_WYSOKOSC_KONSOLI;
-	
-	if (DEBUG_MODE) { debugMode(); }
-
-	wypiszNaglowek();
-	
-	znak = (char)wczytajKodZnaku();
-
-	rozmiar = wczytajRozmiarPoczatkowy();
-	
-	cout << znak << endl;
-	cout << rozmiar;
-
-	rysujFigure(rozmiar,znak,0,0);
-
-	//figuraMain(znak, rozmiar);
-	
-	//wypiszASCII();
-
-	//wybierzZnak();
-
-	//echoConsoleInfoOnly();
-
-	
-
-
-	//oczekiwanie na nacisniecie Esc
-	//cout << endl << endl << "Kliknij dowolny klawisz, aby zakonczyc program...";
-	_getch();
-
-	//koniec funkcji main, koniec programu
-	return EXIT_SUCCESS;
+	::HANDLE hConsoleOut = ::GetStdHandle(STD_OUTPUT_HANDLE);
+	::CONSOLE_CURSOR_INFO hCCI;
+	::GetConsoleCursorInfo(hConsoleOut, &hCCI);
+	hCCI.bVisible = trigger;
+	::SetConsoleCursorInfo(hConsoleOut, &hCCI);
 }
-/* KONIEC */
 
-/*************************************************************************/
-/* DEFINICJE FUNKCJI */
+void wypiszASCII() {
+	unsigned char ch;
+	unsigned short i;
+	cout << endl << "Czy wyswietlic tablice znakow ASCII?" << endl;
+	cout << "Tak [1]\nNie [dowolny klawisz]\n";
 
-int wczytajLiczbeCalkowita(string komunikat, bool czyMusiBycDodatnia) {
-	int wczytanaLiczba;
-	cout << komunikat << endl;
-	cin >> wczytanaLiczba;
-	//dopoki uzytkownik podaje zla wartosc pytamy ponownie - uzywamy petli while
-	//cin.fail() zwraca prawde, jesli nie udalo sie poprawnie wczytac wartosci do zmiennej danego typu
-	while (cin.fail() || (czyMusiBycDodatnia && wczytanaLiczba <= 0)) {
-		//clear() wyczysci flage fail
-		cin.clear();
-		//ignore wyczysci pozostale dane znajdujace sie w buforze strumienia wejsciowego (cin) az do nowego wiersza 
-		cin.ignore((numeric_limits<streamsize>::max)(), '\n');
-		cout << "Niepoprawna wartosc." << endl;
-		cout << komunikat << endl;
-		cin >> wczytanaLiczba;
+	ch = _getch();
+	if (ch == '1') {
+		cout << endl;
+		for (i = 33; i < 254; i++)
+		{
+			ch = i;
+			if (!((i - 33) % 7)) cout << "\n";
+			cout.width(4);
+			cout << left << i;
+			cout << "-> " << ch << "   ";
+		}
 	}
-	cin.ignore((numeric_limits<streamsize>::max)(), '\n');
-	return wczytanaLiczba;
+	cout << endl;
 }
 
 short wczytajKodZnaku() {
@@ -256,7 +176,7 @@ short wczytajKodZnaku() {
 	short wejscie;
 	do {
 		cout << komunikatZacheta;
-		if ((cin >> wejscie) && (wejscie > 32) && (wejscie < 256)) {
+		if ((cin >> wejscie) && (wejscie > 32) && (wejscie < 255)) {
 			//dobrze ale jak podasz np. 88mpiafmsnfls to smieci przerzuca na nastepne cin=...
 			break;
 		}
@@ -272,25 +192,43 @@ short wczytajKodZnaku() {
 short wczytajWysokoscKonsoli() {
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
-	return csbi.srWindow.Bottom + 1;
+	return csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
 }
 
 short wczytajSzerokoscKonsoli() {
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
-	return csbi.srWindow.Right + 1;
+	return csbi.srWindow.Right - csbi.srWindow.Left + 1;
+}
+
+short getMaxRozmiarFigury() {
+	return min(wczytajWysokoscKonsoli(), (wczytajSzerokoscKonsoli()+1)/2);
+}
+
+void gotoxy(short x, short y) {
+	CONSOLE_SCREEN_BUFFER_INFO csbi;
+	COORD c; //SHORT x, SHORT y
+
+	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+
+	c.X = x + csbi.srWindow.Left;
+	c.Y = y + csbi.srWindow.Top;
+	SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), c);
 }
 
 short wczytajRozmiarPoczatkowy() {
 /* Przyjmuje liczby ca³kowite od MIN_ROZMIAR_FIGURY do MAX_ROZMIAR_FIGURY */
 
 	short wejscie;
-	short maxRozmiarFigury = wczytajWysokoscKonsoli();
-	string komunikatZacheta = "Podaj rozmiar poczatkowy figury: ";
+	short maxRozmiarFigury;
+	string komunikatZacheta = "Podaj rozmiar poczatkowy figury ";
 	string komunikatBlad = "\tPodano niewlasciwa wartosc, sprobuj ponownie.\n";
 
 	do {
+		maxRozmiarFigury = getMaxRozmiarFigury();
+
 		cout << komunikatZacheta;
+		cout << "(min=" << MIN_ROZMIAR_FIGURY << ", max=" << maxRozmiarFigury << "): ";
 		if ((cin >> wejscie) && (wejscie >= MIN_ROZMIAR_FIGURY) && (wejscie <= maxRozmiarFigury)) {
 			//good type
 			break;
@@ -320,8 +258,93 @@ short wczytajRozmiarPoczatkowy() {
 	return wejscie;*/
 }
 
-bool figuraMain(char znak, short rozmiarPoczatkowy) {
-	void rysujFigure2(short coordX, short coordY, char znak, short rozmiar);
+void rysujFigure(short rozmiar, char znak, short x, short y)
+{
+	system("cls");
+	short pozycjaPoprzeczki;
+	bool czyParzystyRozmiar;
 
-	return false;
+	if (rozmiar % 2 == 0) {
+		czyParzystyRozmiar = 1;
+	}
+	else {
+		czyParzystyRozmiar = 0;
+	}
+
+	if (rozmiar % 2 == 0) {
+		pozycjaPoprzeczki = rozmiar / 2 - 1;
+	}
+	else {
+		pozycjaPoprzeczki = (rozmiar - 1) / 2;
+	}
+
+	for (int i = 0; i < rozmiar; i++)
+	{
+		gotoxy(x + i, y + i);
+		cout << znak;
+		if (i < rozmiar - 1) {
+			gotoxy(x + (2 * rozmiar - i - 2), y + i);
+			cout << znak;
+		}
+		if (i < rozmiar - 2 + czyParzystyRozmiar) {
+			gotoxy(x + pozycjaPoprzeczki + i + 1, y + pozycjaPoprzeczki);
+			cout << znak;
+		}
+	}
+}
+
+unsigned char manipulujFigura(short &pozycjaX, short &pozycjaY, short &rozmiar)
+{
+	unsigned char wejscie;
+	bool nieRysujPonownie;
+	short szerokoscFigury = rozmiar * 2 - 1;
+	short wysokoscKonsoli = wczytajWysokoscKonsoli();
+	short szerokoscKonsoli = wczytajSzerokoscKonsoli();
+
+	bool czyMoznaWGore = (pozycjaY > 0);
+	bool czyMoznaWDol = ((pozycjaY + rozmiar) < wysokoscKonsoli);
+	bool czyMoznaWLewo = (pozycjaX > 0);
+	bool czyMoznaWPrawo = ((pozycjaX + szerokoscFigury) < szerokoscKonsoli);
+
+	do {
+		nieRysujPonownie = false;
+		wejscie = _getch();
+		//for detect the function\arrow keys we must call the getch() again, testing if a is '0' or '0xE0'
+		if (wejscie == 0 || wejscie == 0xE0) wejscie = _getch();
+		switch (wejscie) {
+		case 72:
+			if (czyMoznaWGore)
+				pozycjaY--;
+			break;
+		case 80:
+			if (czyMoznaWDol)
+				pozycjaY++;
+			break;
+		case 75:
+			if (czyMoznaWLewo)
+				pozycjaX--;
+			break;
+		case 77:
+			if (czyMoznaWPrawo)
+				pozycjaX++;
+			break;
+		case 45:
+			if (rozmiar > MIN_ROZMIAR_FIGURY)
+				rozmiar--;
+			break;
+		case 43:
+			if (((pozycjaY + rozmiar) < wysokoscKonsoli) && ((pozycjaX + szerokoscFigury + 1) < szerokoscKonsoli)) {
+				rozmiar++;
+			}
+			break;
+		case ESC: //Esc
+			break;
+		case ENTER: //Enter
+			break;
+		default:
+			nieRysujPonownie = true;
+			break;
+		}
+	} while (nieRysujPonownie);
+	return wejscie;
 }
